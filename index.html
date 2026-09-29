@@ -125,6 +125,18 @@ textarea{resize:vertical;min-height:56px}
 .deck-tile .deck-n{font-size:12.5px;font-weight:650;opacity:.7;font-variant-numeric:tabular-nums}
 .deck-tile:disabled{opacity:.45;cursor:default}
 .deck-tile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.opt.sel{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--surface)}
+.opt.dim{opacity:.55}
+.opt:disabled{cursor:default}
+.btn:disabled{opacity:.45;cursor:default}
+.rev-list{margin-bottom:8px}
+.rev-item{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--good);border-radius:10px;padding:12px 14px;margin-bottom:10px;font-size:14.5px;line-height:1.45}
+.rev-item.bad{border-left-color:var(--bad)}
+.rev-top{display:flex;gap:9px;align-items:flex-start;margin-bottom:6px}
+.rev-mark{flex:0 0 auto;font-weight:700;color:var(--good)}
+.rev-item.bad .rev-mark{color:var(--bad)}
+.rev-row{margin-top:6px}
+.rev-lbl{display:block;font-size:11.5px;font-weight:650;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);margin-bottom:2px}
 </style>
 </head>
 <body>
@@ -3529,21 +3541,13 @@ function startSession(mode){
   const L=prefs().sessionLen; if(L!=='all') queue=queue.slice(0,+L);
   if(!queue.length){ alert('No cards here yet. Add some in Library.'); return; }
   if(mode==='mcq') queue.forEach(makeMcqOptions);
-  session={mode, queue, idx:0, score:0, total:0, flipped:false, answered:false, topicId:studyNav.topicId, label:studyNav.label, deck:studyNav.deck};
+  session={mode, queue, idx:0, score:0, total:0, flipped:false, answered:false, sel:null, typed:'', log:[], reviewFilter:null, topicId:studyNav.topicId, label:studyNav.label, deck:studyNav.deck};
   render();
 }
 
 function renderSession(){
   const {mode, queue, idx, score, total} = session;
-  if(idx>=queue.length){
-    const pct = total ? Math.round(score/total*100) : null;
-    return `
-    <div class="card" style="text-align:center">
-      <h2>Session complete</h2>
-      ${pct!==null ? `<p style="font-size:32px;margin:12px 0;font-family:'Source Serif 4',serif">${score}/${total}</p><p class="muted">${pct}% correct</p>` : `<p class="muted">You reviewed ${queue.length} card${queue.length===1?'':'s'}.</p>`}
-      <button class="btn full" id="endBtn" style="margin-top:14px">Back to setup</button>
-    </div>`;
-  }
+  if(idx>=queue.length) return renderReview();
   const card = queue[idx];
   const pctBar = Math.round((idx)/queue.length*100);
   let body='';
@@ -3558,14 +3562,18 @@ function renderSession(){
         <button class="btn full" id="gotBtn">Got it</button>
       </div>` : `<p class="muted" style="text-align:center">Tap the card to reveal the answer</p>`}`;
   } else if(mode==='mcq'){
+    const optCls=i=> session.answered ? (i===card._correctIdx?' correct':(i===session.sel?' wrong':' dim')) : (i===session.sel?' sel':'');
     body = `<div class="card"><strong>${esc(card.q)}</strong></div>
-    <div id="optsWrap">${card._opts.map((o,i)=>`<button class="opt" data-i="${i}">${esc(o)}</button>`).join('')}</div>
-    ${session.answered ? `<button class="btn full" id="nextBtn" style="margin-top:6px">Next</button>` : ''}`;
+    <div id="optsWrap">${card._opts.map((o,i)=>`<button class="opt${optCls(i)}" data-i="${i}" aria-pressed="${i===session.sel}" ${session.answered?'disabled':''}>${esc(o)}</button>`).join('')}</div>
+    ${session.answered
+      ? `<p class="muted" style="margin:2px 0 8px">${session.sel===card._correctIdx?'Correct.':'Not quite. The correct answer is highlighted.'}</p><button class="btn full" id="nextBtn">${idx+1<queue.length?'Next':'See results'}</button>`
+      : `<p class="muted" style="margin:2px 0 8px">${session.sel===null?'Choose an answer. Tap it again to deselect.':'Tap another option to change your mind, or check your answer.'}</p><button class="btn full" id="checkBtn" ${session.sel===null?'disabled':''}>Check answer</button>`}`;
   } else {
     body = `<div class="card"><strong>${esc(card.q)}</strong></div>
     ${!session.answered ? `
       <textarea id="typedInput" placeholder="Type your answer…"></textarea>
       <button class="btn full" id="submitTyped">Check answer</button>` : `
+      ${session.typed?`<div class="card"><span class="muted" style="display:block;margin-bottom:4px">Your answer</span>${esc(session.typed)}</div>`:''}
       <div class="card"><span class="muted" style="display:block;margin-bottom:4px">Model answer</span>${esc(showA(card))}</div>
       <p class="muted">Mark your own response:</p>
       <div class="row">
@@ -3580,6 +3588,48 @@ function renderSession(){
     <button class="del-btn" id="delCardBtn">🗑 Delete this card permanently</button>
     <button class="btn secondary full" id="quitBtn" style="margin-top:14px">End session</button>
   `;
+}
+
+function logResult(card,right,given){
+  if(!session.log) session.log=[];
+  const prev=session.log.find(x=>x.id===card.id);
+  if(prev){ if(!right) prev.right=false; return; } // flashcards: once missed, stays missed
+  session.log.push({id:card.id,q:card.q,a:showA(card),right,given:given||''});
+}
+function renderReview(){
+  const {mode,score,total}=session; const log=session.log||[];
+  const wrong=log.filter(x=>!x.right);
+  if(session.reviewFilter===null) session.reviewFilter = wrong.length?'wrong':'all';
+  const shown = session.reviewFilter==='wrong'?wrong:log;
+  const head = mode==='flash'
+    ? `<p style="font-size:32px;margin:10px 0 4px;font-family:'Source Serif 4',serif">${log.length-wrong.length}/${log.length}</p><p class="muted">known first time</p>`
+    : `<p style="font-size:32px;margin:10px 0 4px;font-family:'Source Serif 4',serif">${score}/${total}</p><p class="muted">${total?Math.round(score/total*100):0}% correct</p>`;
+  const givenLbl = mode==='mcq'?'Your answer':'Your answer';
+  const items = shown.map((x,i)=>`<div class="rev-item ${x.right?'ok':'bad'}">
+      <div class="rev-top"><span class="rev-mark" aria-label="${x.right?'Correct':'Incorrect'}">${x.right?'✓':'✗'}</span><strong>${esc(x.q)}</strong></div>
+      ${mode!=='flash'&&x.given?`<div class="rev-row"><span class="rev-lbl">${givenLbl}</span>${esc(x.given)}</div>`:''}
+      ${mode!=='flash'&&!x.given&&mode==='typed'?`<div class="rev-row"><span class="rev-lbl">Your answer</span><span class="muted">(left blank)</span></div>`:''}
+      <div class="rev-row"><span class="rev-lbl">${mode==='mcq'?'Correct answer':'Answer'}</span>${esc(x.a)}</div>
+    </div>`).join('') || `<p class="muted" style="text-align:center">${session.reviewFilter==='wrong'?'Nothing wrong. Well done.':'No answers recorded.'}</p>`;
+  return `
+  <div class="card" style="text-align:center">
+    <h2>Session complete</h2>${head}
+  </div>
+  ${log.length?`<div class="seg" role="group" aria-label="Review filter">
+    <button data-rev="wrong" class="${session.reviewFilter==='wrong'?'on':''}">${mode==='flash'?'Missed':'Wrong'} (${wrong.length})</button>
+    <button data-rev="all" class="${session.reviewFilter==='all'?'on':''}">All (${log.length})</button>
+  </div>
+  <div class="rev-list">${items}</div>`:''}
+  ${wrong.length?`<button class="btn full" id="retryWrong" style="margin-top:6px">Retry the ${wrong.length} ${mode==='flash'?'missed':'wrong'} card${wrong.length===1?'':'s'}</button>`:''}
+  <button class="btn ${wrong.length?'secondary ':''}full" id="endBtn" style="margin-top:10px">Back to setup</button>`;
+}
+function retryWrong(){
+  const ids=new Set((session.log||[]).filter(x=>!x.right).map(x=>x.id));
+  const queue=shuffle(state.cards.filter(c=>ids.has(c.id)));
+  if(!queue.length) return;
+  if(session.mode==='mcq') queue.forEach(makeMcqOptions);
+  session={...session, queue, idx:0, score:0, total:0, flipped:false, answered:false, sel:null, typed:'', log:[], reviewFilter:null, label:(session.label||'')};
+  render(); document.getElementById('main').scrollTop=0;
 }
 function topicSelDesc(){
   const t=session.topicId?splitTopic(topicName(session.topicId)).title:'Mixed';
@@ -3676,8 +3726,10 @@ function wire(){
   }
 
   if(session){
-    const quit=document.getElementById('quitBtn'); if(quit) quit.onclick=()=>{session=null; render();};
+    const quit=document.getElementById('quitBtn'); if(quit) quit.onclick=()=>{ if(session.log&&session.log.length){ session.queue=session.queue.slice(0,session.idx); session.idx=session.queue.length; render(); } else { session=null; render(); } };
     const end=document.getElementById('endBtn'); if(end) end.onclick=()=>{session=null; render();};
+    document.querySelectorAll('[data-rev]').forEach(b=>b.onclick=()=>{ session.reviewFilter=b.dataset.rev; render(); });
+    const rw=document.getElementById('retryWrong'); if(rw) rw.onclick=retryWrong;
     const card=session.queue[session.idx];
     const del=document.getElementById('delCardBtn');
     if(del&&card) del.onclick=()=>{
@@ -3689,26 +3741,28 @@ function wire(){
     if(session.mode==='flash'){
       const fc=document.getElementById('flashCard');
       if(fc) fc.onclick=()=>{session.flipped=!session.flipped; render();};
-      const again=document.getElementById('againBtn'); if(again) again.onclick=()=>{session.queue.push(card); nextCard();};
-      const got=document.getElementById('gotBtn'); if(got) got.onclick=()=>nextCard();
+      const again=document.getElementById('againBtn'); if(again) again.onclick=()=>{logResult(card,false,null); session.queue.push(card); nextCard();};
+      const got=document.getElementById('gotBtn'); if(got) got.onclick=()=>{logResult(card,true,null); nextCard();};
     } else if(session.mode==='mcq'){
       if(!session.answered){
         document.querySelectorAll('#optsWrap .opt').forEach(btn=>btn.onclick=()=>{
-          const i=+btn.dataset.i; session.answered=true; session.total++;
-          if(i===card._correctIdx) session.score++;
-          document.querySelectorAll('#optsWrap .opt').forEach((b,bi)=>{
-            if(bi===card._correctIdx) b.classList.add('correct');
-            else if(bi===i) b.classList.add('wrong');
-          });
-          render();
+          const i=+btn.dataset.i; session.sel = session.sel===i ? null : i; render();
         });
+        const chk=document.getElementById('checkBtn');
+        if(chk) chk.onclick=()=>{
+          if(session.sel===null) return;
+          const right=session.sel===card._correctIdx;
+          session.answered=true; session.total++; if(right) session.score++;
+          logResult(card,right,card._opts[session.sel]);
+          render();
+        };
       }
       const next=document.getElementById('nextBtn'); if(next) next.onclick=()=>nextCard();
     } else {
       const submit=document.getElementById('submitTyped');
-      if(submit) submit.onclick=()=>{ session.answered=true; render(); };
-      const mr=document.getElementById('markRight'); if(mr) mr.onclick=()=>{session.total++; session.score++; nextCard();};
-      const mw=document.getElementById('markWrong'); if(mw) mw.onclick=()=>{session.total++; nextCard();};
+      if(submit) submit.onclick=()=>{ const ti=document.getElementById('typedInput'); session.typed=ti?ti.value.trim():''; session.answered=true; render(); };
+      const mr=document.getElementById('markRight'); if(mr) mr.onclick=()=>{session.total++; session.score++; logResult(card,true,session.typed); nextCard();};
+      const mw=document.getElementById('markWrong'); if(mw) mw.onclick=()=>{session.total++; logResult(card,false,session.typed); nextCard();};
     }
   }
 
@@ -3747,7 +3801,7 @@ function wire(){
   }
 }
 
-function nextCard(){ session.idx++; session.flipped=false; session.answered=false; render(); }
+function nextCard(){ session.idx++; session.flipped=false; session.answered=false; session.sel=null; session.typed=''; render(); document.getElementById('main').scrollTop=0; }
 
 function openCardForm(topicId){
   const subs = state.subtopics.filter(s=>s.topicId===topicId);
