@@ -3458,8 +3458,8 @@ function renderSubPicker(){
 }
 function renderModePicker(){
   const n=studyPool(studyNav.topicId, studyNav.subIds).length;
-  const P=prefs(); const lens=['20','50'].filter(x=>+x<n);
-  const lenCtl=`<div class="seg" role="group" aria-label="Session length">${[...lens,'all'].map(x=>`<button data-len="${x}" class="${(P.sessionLen===x||(x==='all'&&!lens.includes(P.sessionLen)))?'on':''}">${x==='all'?`All ${n}`:x+' cards'}</button>`).join('')}</div>`;
+  const P=prefs(); const lens=['10','20','50'].filter(x=>+x<n);
+  const lenCtl=`<div class="seg" role="group" aria-label="Session length">${[...lens,'all'].map(x=>`<button data-len="${x}" class="${(P.sessionLen===x||(x==='all'&&!lens.includes(P.sessionLen)))?'on':''}">${x==='all'?`All ${n}`:x}</button>`).join('')}</div>`;
   const noteCtl=`<label class="toggle"><input type="checkbox" id="hideNotes" ${P.hideNotes?'checked':''}><span><strong>Hide course-error notes</strong><br><span class="muted">Strips remarks about lecture slips and slide typos from answers, and skips the cards that only test course errors.</span></span></label>`;
   const modes=[
     ['flash','🃏','Flashcards','Reveal the answer, then mark it. Cards you miss come back later in the session.'],
