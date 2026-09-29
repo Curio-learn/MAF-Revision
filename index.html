@@ -3477,7 +3477,7 @@ function renderModePicker(){
 // ---- Study preferences: session length, course-note hiding, MCQ distractors ----
 function prefs(){ state.prefs=state.prefs||{}; if(state.prefs.hideNotes===undefined) state.prefs.hideNotes=true; if(!state.prefs.sessionLen) state.prefs.sessionLen='20'; return state.prefs; }
 const NOTE_RE=/(\b(audio|lecture|lecturer|lecturer's|slide|slides|slide's|narration|transcript|interactive|course page|course question|course text|chart)\b[^()\[\]]{0,50}?\b(says?|said|shows?|showed|misprints?|rounds?|uses|calls?|labels?|writes?|quotes?|applies|gives?|drops?|states?|puts?)\b)|\b(misprints?|typo|verified|screenshot|audio slips?|audio slip|misattribut\w*|muddles?|misspell\w*)\b/i;
-const NOTE_TAIL_RE=/(?<=[.!?)]\s)(Course (errors?|inconsistency|inconsistencies|table error|slips?)|Note: the course)\b[^]*$/;
+const NOTE_TAIL_RE=/([.!?)]\s)(?:Course (?:errors?|inconsistency|inconsistencies|table error|slips?)|Note: the course)\b[\s\S]*$/;
 const ERRATA_Q=/^(\[Course (error|inconsistency|slips?)\]|Course slip:)/;
 function stripBrackets(t){
   let out='', i=0;
@@ -3497,7 +3497,7 @@ function stripBrackets(t){
   return out;
 }
 function stripNotes(t){
-  let o=stripBrackets(t||'').replace(NOTE_TAIL_RE,'');
+  let o=stripBrackets(t||'').replace(NOTE_TAIL_RE,'$1');
   o=o.replace(/\s+([.,;:])/g,'$1').replace(/\(\s*\)/g,'').replace(/[ \t]{2,}/g,' ').trim().replace(/[;,:]$/,'.');
   return o||t;
 }
